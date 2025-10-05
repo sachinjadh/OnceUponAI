@@ -28,9 +28,11 @@ class LLMGenerator:
             max_length=max_length,
             do_sample=True,
             temperature=temperature,
-            top_k=50,
-            top_p=0.95,
+            top_k=40,  # Reduced for faster generation
+            top_p=0.9,  # Slightly reduced for speed
             pad_token_id=self.tokenizer.eos_token_id,
+            num_beams=1,  # Use greedy search for speed
+            early_stopping=True,
         )
         text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
         return text

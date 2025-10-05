@@ -1,4 +1,13 @@
 import random
+from typing import Optional
+
+# Try to import LLM generator - gracefully handle if dependencies missing
+try:
+    from .llm_generator import LLMGenerator
+    LLM_AVAILABLE = True
+except (ImportError, RuntimeError) as e:
+    LLMGenerator = None
+    LLM_AVAILABLE = False
 
 CHARACTERS = [
     "Lion",
@@ -11,6 +20,21 @@ CHARACTERS = [
     "Duck",
     "Fox",
     "Turtle",
+    "Cat",
+    "Dog",
+    "Panda",
+    "Penguin",
+    "Owl",
+    "Frog",
+    "Koala",
+    "Zebra",
+    "Giraffe",
+    "Hippo",
+    "Sheep",
+    "Cow",
+    "Horse",
+    "Tiger",
+    "Deer",
 ]
 
 # Small emoji map to show alongside animals
@@ -25,6 +49,21 @@ EMOJI = {
     "Duck": "🦆",
     "Fox": "🦊",
     "Turtle": "🐢",
+    "Cat": "🐱",
+    "Dog": "🐶",
+    "Panda": "🐼",
+    "Penguin": "🐧",
+    "Owl": "🦉",
+    "Frog": "🐸",
+    "Koala": "🐨",
+    "Zebra": "🦓",
+    "Giraffe": "🦒",
+    "Hippo": "🦛",
+    "Sheep": "🐑",
+    "Cow": "🐄",
+    "Horse": "🐴",
+    "Tiger": "🐅",
+    "Deer": "🦌",
 }
 
 LOCATIONS = [
@@ -149,8 +188,8 @@ def _simple_word(s: str) -> str:
         "brushed their teeth": "brushed teeth",
         "turned off the bright light": "turned off the light",
         "gave a gentle hug": "gave a hug",
-    "They put the tablet to sleep and charged it gently.": "They put the toy to sleep.",
-    "They turn the light off to save sleepy power.": "They turned off the light.",
+        "They put the tablet to sleep and charged it gently.": "They put the toy to sleep.",
+        "They turn the light off to save sleepy power.": "They turned off the light.",
         "They used the night-light softly so eyes can rest.": "They used a night-light.",
         "They listened to quiet music and then the screen went dark.": "They listened to calm music.",
         "They said 'thank you' to the little robot who helps charge toys.": "They said thank you.",
@@ -182,16 +221,151 @@ def _simple_word(s: str) -> str:
     return replacements.get(s, s)
 
 
-def generate_story(prompt: str = "", child_name: str | None = None, favorite_animal: str | None = None, voice_friendly: bool = False):
+def generate_story(prompt: str = "", child_name: str | None = None, favorite_animal: str | None = None, voice_friendly: bool = False, use_llm: bool = True):
     """Generate a very short, toddler-friendly bedtime story.
 
     - prompt: optional small hint (e.g., favorite animal or toy)
-    - seed: optional random seed for deterministic choices
+    - child_name: optional child's name to personalize the story
+    - favorite_animal: preferred animal character
     - voice_friendly: if True, return a list of short lines (good for reading aloud)
-    - vocab: 'normal' or 'simple' (simpler words for younger toddlers)
+    - use_llm: if True, use AI generation; if False, use template-based generation
 
     Returns: string (paragraph) by default or list[str] when voice_friendly=True.
     """
+    # Check if LLM is requested and available
+    if use_llm and LLM_AVAILABLE:
+        return _generate_story_llm(prompt, child_name, favorite_animal, voice_friendly)
+    elif use_llm and not LLM_AVAILABLE:
+        print("Warning: LLM requested but not available. Falling back to template generation.")
+    
+    # Fall back to template-based generation
+    return _generate_story_template(prompt, child_name, favorite_animal, voice_friendly)
+
+
+def _generate_story_llm(prompt: str = "", child_name: str | None = None, favorite_animal: str | None = None, voice_friendly: bool = False):
+    """Generate story using LLM (AI-powered generation)."""
+    try:
+        # Initialize the LLM generator
+        generator = LLMGenerator(model_name="gpt2")
+        
+        # Determine the character first
+        character = None
+        if favorite_animal:
+            character = favorite_animal
+        elif prompt and any(animal.lower() in prompt.lower() for animal in CHARACTERS):
+            for animal in CHARACTERS:
+                if animal.lower() in prompt.lower():
+                    character = animal
+                    break
+        else:
+            character = random.choice(CHARACTERS)
+        
+        # Build a structured prompt that follows the exact template pattern
+        if child_name and child_name.strip():
+            story_prompt = f"{character} waves hello to {child_name.strip()} with a warm smile. {character} teaches that being kind and sharing makes everyone happy. {character} plays games, dances around, and makes silly faces that make everyone giggle. {character} talks gently to {child_name.strip()} about their day and gives them a cozy hug. Now it's time for {child_name.strip()} to rest and sleep peacefully. Goodnight dear {child_name.strip()}, have the sweetest dreams."
+        else:
+            story_prompt = f"{character} waves hello with a warm smile. {character} teaches that being kind and sharing makes everyone happy. {character} plays games, dances around, and makes silly faces that make everyone giggle. Now it's time to rest and sleep peacefully. Goodnight, have the sweetest dreams."
+        
+        # Generate the story with better parameters
+        # Calculate input length in tokens
+        input_tokens = generator.tokenizer.encode(story_prompt)
+        input_length = len(input_tokens)
+        
+        generated_text = generator.generate(
+            prompt=story_prompt,
+            max_length=input_length + 50,  # Shorter for faster generation
+            temperature=0.7,  # Balanced creativity
+        )
+        
+        # The generated text includes our prompt, so we'll use it all as the story
+        story = generated_text.strip()
+        
+        # Clean up the generated text
+        story = _clean_generated_story(story, child_name, favorite_animal)
+        
+        # Add AI generation indicator (just icon)
+        story = f"🤖 {story}"
+        
+        # Format for voice-friendly output if requested
+        if voice_friendly:
+            sentences = [s.strip() for s in story.split('.') if s.strip()]
+            return [s + '.' for s in sentences if s]
+        
+        return story
+        
+    except Exception as e:
+        print(f"Error generating LLM story: {e}. Falling back to template generation.")
+        return _generate_story_template(prompt, child_name, favorite_animal, voice_friendly)
+
+
+def _clean_generated_story(story: str, child_name: Optional[str] = None, favorite_animal: Optional[str] = None) -> str:
+    """Clean up and structure the LLM-generated story to follow the proper format."""
+    if not story:
+        return "Once upon a time, there was a gentle friend who wished everyone sweet dreams. Goodnight!"
+    
+    # Remove any unwanted content
+    story = story.strip()
+    
+    # Split into sentences and clean them up
+    sentences = [s.strip() for s in story.split('.') if s.strip()]
+    
+    # Filter sentences to keep only the structured parts (first 6 sentences max)
+    # Structure: greeting, lesson, fun, talk to kid, sleep, goodbye
+    structured_sentences = []
+    
+    for sentence in sentences[:6]:  # Only take first 6 sentences
+        # Skip sentences that seem off-topic or unstructured
+        lower_sent = sentence.lower()
+        
+        # Keep sentences that match our structure patterns
+        if any(pattern in lower_sent for pattern in [
+            'waves hello', 'teaches', 'being kind', 'sharing', 
+            'plays games', 'dances', 'silly faces', 'giggle',
+            'talks gently', 'about their day', 'cozy hug',
+            'time for', 'rest', 'sleep', 'goodnight', 'sweet dreams'
+        ]):
+            structured_sentences.append(sentence)
+        elif len(structured_sentences) < 6:  # Accept first 6 sentences even if they don't match perfectly
+            structured_sentences.append(sentence)
+    
+    # Ensure minimum structure
+    if len(structured_sentences) < 4:
+        # Add missing parts if too short
+        character_name = favorite_animal if favorite_animal else "Lion"
+        if child_name and child_name.strip():
+            if len(structured_sentences) == 0:
+                structured_sentences.append(f"{character_name} waves hello to {child_name.strip()} with a warm smile")
+            if len(structured_sentences) == 1:
+                structured_sentences.append(f"{character_name} teaches that being kind and sharing makes everyone happy")
+            if len(structured_sentences) == 2:
+                structured_sentences.append(f"{character_name} plays games, dances around, and makes silly faces that make everyone giggle")
+            if len(structured_sentences) == 3:
+                structured_sentences.append(f"{character_name} talks gently to {child_name.strip()} about their day and gives them a cozy hug")
+        else:
+            if len(structured_sentences) == 0:
+                structured_sentences.append(f"{character_name} waves hello with a warm smile")
+            if len(structured_sentences) == 1:
+                structured_sentences.append(f"{character_name} teaches that being kind and sharing makes everyone happy")
+            if len(structured_sentences) == 2:
+                structured_sentences.append(f"{character_name} plays games, dances around, and makes silly faces that make everyone giggle")
+    
+    # Reconstruct the story
+    story = '. '.join(structured_sentences)
+    if not story.endswith('.'):
+        story += '.'
+    
+    # Ensure it ends with proper goodnight
+    if not any(ending in story.lower() for ending in ["goodnight", "sweet dreams"]):
+        if child_name and child_name.strip():
+            story += f" Goodnight {child_name.strip()}, sweet dreams!"
+        else:
+            story += " Goodnight, sweet dreams!"
+    
+    return story
+
+
+def _generate_story_template(prompt: str = "", child_name: str | None = None, favorite_animal: str | None = None, voice_friendly: bool = False):
+    """Template-based story generation (original logic)."""
     # Always use non-deterministic randomness (no seed)
 
     # If prompt mentions a known character (animal), prefer that character
@@ -336,4 +510,8 @@ def generate_story(prompt: str = "", child_name: str | None = None, favorite_ani
         return lines
 
     story = " ".join(lines)
+    
+    # Add template generation indicator (just icon)
+    story = f"📝 {story}"
+    
     return story
